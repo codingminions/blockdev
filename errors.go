@@ -2,10 +2,13 @@ package blockdev
 
 import "errors"
 
-// Sentinels for errors.Is matching; methods wrap them with operation context
-// so callers branch on category, not on parsed message strings.
 var (
-	ErrMisaligned  = errors.New("blockdev: offset or length not block-aligned")
+	// ErrMisaligned indicates an offset or length is not a multiple of BlockSize.
+	ErrMisaligned = errors.New("blockdev: offset or length not block-aligned")
+
+	// ErrOutOfBounds indicates a read or write extends beyond the device length.
 	ErrOutOfBounds = errors.New("blockdev: read/write beyond device length")
-	ErrBadFormat   = errors.New("blockdev: malformed serialized data")
+
+	// ErrBadFormat indicates serialized data is malformed and cannot be deserialized.
+	ErrBadFormat = errors.New("blockdev: malformed serialized data")
 )
