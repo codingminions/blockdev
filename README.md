@@ -92,7 +92,7 @@ CI runs `build` · `vet` · `gofmt` · `test -race` on every PR (Go 1.22 + 1.23 
 
 Click-through demo in your browser — Go compiled to WebAssembly, everything in the tab.
 
-- **Live**: _(coming soon — gh-pages)_
+- **Live**: https://codingminions.github.io/blockdev/playground/
 - **Local**:
   ```
   cd playground && GOOS=js GOARCH=wasm go build -o blockdev.wasm . && python3 -m http.server 8000
