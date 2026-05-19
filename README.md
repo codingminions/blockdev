@@ -6,7 +6,8 @@ A copy-on-write, in-memory block device backend in Go. Designed for E2B-style mi
 [![Go Reference](https://pkg.go.dev/badge/github.com/codingminions/blockdev.svg)](https://pkg.go.dev/github.com/codingminions/blockdev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> **Status: v0.1.0.** API stable. Format locked by golden-bytes test.
+> **Status: v0.2.0.** API stable. Format locked by golden-bytes test.
+> **Playground**: https://codingminions.github.io/blockdev/playground/
 
 ---
 
