@@ -1,3 +1,9 @@
+//go:build ignore
+
+// snapshot-resume.go — pause/resume round-trip with a 256 KB shared base.
+// Run directly:
+//
+//	go run examples/snapshot-resume.go
 package main
 
 import (
@@ -11,12 +17,12 @@ func main() {
 	// Imagine this is a shared filesystem image used by many sandboxes.
 	base := make([]byte, 64*blockdev.BlockSize)
 
-	// Sandbox starts and makes some changes.
 	bd, err := blockdev.New(base, blockdev.WithName("sandbox-1"))
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	// Sandbox writes to four widely-spaced blocks.
 	for _, block := range []int64{2, 7, 13, 29} {
 		data := make([]byte, blockdev.BlockSize)
 		for i := range data {
@@ -27,18 +33,18 @@ func main() {
 		}
 	}
 
-	// Pause — capture only the diff.
+	// Pause — only the diff gets persisted.
 	blob := bd.Serialize()
-	fmt.Printf("Pause: %d-byte snapshot for 4 changed blocks (base is %d bytes — would have stored %.0f%% more without COW)\n",
-		len(blob), len(base), 100*float64(len(base)-len(blob))/float64(len(blob)))
+	fmt.Printf("Pause: %d-byte snapshot for 4 changed blocks (base is %d bytes — %.0f%% smaller than a full copy)\n",
+		len(blob), len(base), 100*float64(len(base)-len(blob))/float64(len(base)))
 
-	// Days later, somewhere else, resume.
+	// Days later, somewhere else: resume.
 	bd2, err := blockdev.Deserialize(blob, base)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Verify reads match what the original sandbox wrote.
+	// Verify byte-identical reads.
 	for _, block := range []int64{2, 7, 13, 29} {
 		buf := make([]byte, blockdev.BlockSize)
 		if _, err := bd2.ReadAt(buf, block*blockdev.BlockSize); err != nil {
@@ -48,5 +54,5 @@ func main() {
 			log.Fatalf("mismatch at block %d", block)
 		}
 	}
-	fmt.Println("Resume: every block matches the original sandbox.")
+	fmt.Println("Resume: every changed block matches the original sandbox.")
 }
