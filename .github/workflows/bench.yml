@@ -1,0 +1,49 @@
+name: Benchmarks
+
+# Publish-only: runs benchmarks, pushes results to the gh-pages branch where
+# benchmark-action renders a chart. Never gates a PR merge. Annotates points
+# that regressed by 50%+ but does not fail the workflow.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * *'    # daily at 06:00 UTC
+  workflow_dispatch:
+
+# Needed by benchmark-action to push to gh-pages.
+permissions:
+  contents: write
+  deployments: write
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      # -count=5 averages over five runs to dampen shared-runner noise.
+      # -run='^$' skips tests so only benchmarks execute.
+      - name: Run benchmarks
+        run: |
+          go test -bench=. -benchmem -count=5 -run='^$' \
+            ./tests/benchmarks/... | tee output.txt
+
+      - name: Publish chart
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: 'go'
+          output-file-path: output.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: 'dev/bench'
+          auto-push: true
+          # Annotate 1.5x regressions but never fail or comment.
+          alert-threshold: '150%'
+          fail-on-alert: false
+          comment-on-alert: false
+          summary-always: true
