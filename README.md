@@ -17,7 +17,7 @@ flowchart LR
     Caller[your code] -->|"ReadAt / WriteAt"| BD[BlockDevice]
     Caller -->|"Serialize"| BD
 
-    BD --> Overlay[("overlay<br/>map block→bytes")]
+    BD --> Overlay[("overlay<br/>map[block#] bytes")]
     BD --> Base[("base<br/>read-only byte slice")]
     Overlay -.->|encode| Blob[("snapshot blob<br/>only changed blocks")]
     Blob -.->|Deserialize + base| Overlay2[("restored overlay")]
@@ -84,110 +84,65 @@ Full runnable demos in [`examples/`](examples/).
 | Vet | `go vet ./...` |
 | Format | `gofmt -l .` |
 
-### Benchmarks
+CI runs `build` · `vet` · `gofmt` · `test -race` on every PR (Go 1.22 + 1.23 matrix).
 
-| Run | Command |
-|---|---|
-| Quick | `go test -bench=. -benchmem ./tests/benchmarks/...` |
-| Stable (slower) | add `-benchtime=5s -count=10` to the quick command |
+---
 
-### Examples
+## Playground
 
-| Demo | Command |
-|---|---|
-| Basic write + read | `go run examples/basic.go` |
-| Snapshot + resume | `go run examples/snapshot-resume.go` |
+Click-through demo in your browser — Go compiled to WebAssembly, everything in the tab.
 
-CI runs `build` · `vet` · `gofmt` · `test -race` on every PR (Go 1.22 + 1.23 matrix). Benchmarks run separately on every push to `main` and nightly; chart linked under [Benchmarks](#benchmarks).
+- **Live**: _(coming soon — gh-pages)_
+- **Local**: `cd playground && GOOS=js GOARCH=wasm go build -o blockdev.wasm . && python3 -m http.server 8000`
+
+What you see: 
+- initialize a device, write and read blocks, snapshot the overlay, discard the device, restore from hex. 
+- Reloading the tab wipes everything — that *is* the "in-memory" proof. 
+- Writes only paint the overlay row (blue); reads served by overlay paint the read row red. 
+- COW routing made visible.
+
+Concurrency isn't exercised here (single click at a time) but is covered by `go test -race ./tests/e2e/...`.
+
 
 ---
 
 ## Read and write flows
 
-### Read
-
-```mermaid
-flowchart LR
-    A([ReadAt p, off]) --> V[validate]
-    V -.->|fail| X[return 0, err]
-    V --> B[per 4 KB block]
-    B --> Q{in overlay?}
-    Q -->|yes| O[copy from overlay]
-    Q -->|no| C[copy from base]
-    O --> R([return len p, nil])
-    C --> R
-    R --> E[observer fires]
-```
-
-The branch in the middle is the COW core: each block is served from overlay if present, otherwise from base. Nothing else has to change.
-
-### Write
-
-```mermaid
-flowchart LR
-    A([WriteAt p, off]) --> V[validate]
-    V -.->|fail| X[return 0, err]
-    V --> B[per 4 KB block]
-    B --> P[overlay.put<br/>copies into new slice]
-    P --> R([return len p, nil])
-    R --> E[observer fires]
-```
-
-`overlay.put` copies the bytes so the caller can reuse `p` immediately. The base is not touched.
+- `ReadAt`: validates, then for each block consults the overlay (if present) or falls through to the base, then copies into the caller's `p`. 
+- `WriteAt`: validates, then for each block calls `overlay.put` which copies into a fresh slice; the base is never touched.
 
 ---
 
 ## API surface
 
-### Core methods
+One type (`BlockDevice`), six funcs/methods, three sentinel errors, two options. Stdlib-only.
 
-| Function | What it does |
-|---|---|
-| `New(initial, opts...) (*BlockDevice, error)` | Construct from a base. `len(initial)` must be a multiple of `BlockSize`. |
-| `(*BlockDevice).ReadAt(p, off) (int, error)` | `io.ReaderAt`. Per block: overlay if present, otherwise base. |
-| `(*BlockDevice).WriteAt(p, off) (int, error)` | `io.WriterAt`. Captured in overlay; base never mutated. |
-| `(*BlockDevice).Serialize() []byte` | Snapshot the overlay. `nil` for a fresh device. |
-| `Deserialize(blob, initial, opts...) (*BlockDevice, error)` | Reconstruct from snapshot + base. |
+```go
+bd, _ := blockdev.New(base)
+bd.ReadAt(p, off)
+bd.WriteAt(p, off)
+blob := bd.Serialize()
+bd2, _ := blockdev.Deserialize(blob, base)
 
-### Options
+blockdev.WithName(name)
+blockdev.WithObserver(fn)
+```
 
-| Option | Purpose |
-|---|---|
-| `WithName(string)` | Tag the device so observer events carry an identifier. |
-| `WithObserver(func(Event))` | Sync callback fired post-op; panic-recovered so it can't crash the I/O path. |
+Full reference, with per-field semantics, contracts, and error wrapping behavior:
 
-### Types
+- [API reference](docs/api.md) — methods, options, types, constants, contracts
+- [Errors](docs/api.md#errors) — `ErrMisaligned`, `ErrOutOfBounds`, `ErrBadFormat`
 
-| Type | Shape |
-|---|---|
-| `Event` | `{Op, Device, Offset, Length, Blocks, Duration, Err}` |
-| `Op` | `OpRead` · `OpWrite` · `OpSerialize` · `OpDeserialize` (typed `uint8` with `Stringer`) |
-| `BlockSize` · `EntrySize` | `4096` · `4104` (constants) |
-
-### Errors (match with `errors.Is`)
-
-| Sentinel | Cause |
-|---|---|
-| `ErrMisaligned` | Offset or length not a multiple of `BlockSize` |
-| `ErrOutOfBounds` | Read or write would extend past device length |
-| `ErrBadFormat` | `Deserialize` blob is malformed |
-
-> All offsets and lengths in `ReadAt`/`WriteAt` must be multiples of `BlockSize` (4096).
+All offsets and lengths in `ReadAt`/`WriteAt` must be multiples of `BlockSize` (4096).
 
 ---
 
 ## Benchmarks
 
-Latest local numbers (Apple M1 Pro):
-
-| Path | ns/op | allocs/op |
-|---|---:|---:|
-| `ReadAt` 4 KB from base | 77 | 0 |
-| `ReadAt` 4 KB from overlay | 78 | 0 |
-| `WriteAt` 4 KB (new block) | 442 | 1 |
-| `Serialize` 100 blocks | 52 µs | 12 |
-| `Deserialize` 100 blocks | 67 µs | 114 |
-| Concurrent parallel reads | 146 | 0 |
+| Run | Command |
+|---|---|
+| Quick | `go test -bench=. -benchmem ./tests/benchmarks/...` |
+| Stable (slower) | add `-benchtime=5s -count=10` to the quick command |
 
 **Live chart from `main`** (updated on every push and nightly): <https://codingminions.github.io/blockdev/dev/bench/>
 
