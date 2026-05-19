@@ -4,9 +4,6 @@ import (
 	"fmt"
 	"io"
 	"time"
-
-	"github.com/codingminions/blockdev/internal/overlay"
-	"github.com/codingminions/blockdev/internal/validate"
 )
 
 // BlockSize is 4096 to match the OS page size and NBD's expected sector size.
@@ -18,10 +15,10 @@ const BlockSize = 4096
 // after handoff; defensive copy would double peak memory when many sandboxes
 // share one image.
 type BlockDevice struct {
-	base    []byte
-	length  int64
-	overlay *overlay.Store
-	cfg     config
+	base   []byte
+	length int64
+	ov     *overlay
+	cfg    config
 }
 
 var (
@@ -33,18 +30,18 @@ var (
 // base is a configuration bug, and we'd rather fail at construction than after
 // a sandbox has been wired up.
 func New(initial []byte, opts ...Option) (*BlockDevice, error) {
-	if err := validate.Alignment(0, len(initial)); err != nil {
-		return nil, fmt.Errorf("blockdev.New: len(initial)=%d: %w", len(initial), ErrMisaligned)
+	if err := checkAlignment(0, len(initial)); err != nil {
+		return nil, fmt.Errorf("blockdev.New: len(initial)=%d: %w", len(initial), err)
 	}
 	var cfg config
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 	return &BlockDevice{
-		base:    initial,
-		length:  int64(len(initial)),
-		overlay: overlay.New(),
-		cfg:     cfg,
+		base:   initial,
+		length: int64(len(initial)),
+		ov:     newOverlay(),
+		cfg:    cfg,
 	}, nil
 }
 
@@ -74,13 +71,13 @@ func (b *BlockDevice) ReadAt(p []byte, off int64) (int, error) {
 }
 
 func (b *BlockDevice) readAt(p []byte, off int64) (int, error) {
-	if err := validate.Bounds(off, len(p), b.length); err != nil {
+	if err := checkBounds(off, len(p), b.length); err != nil {
 		return 0, fmt.Errorf("blockdev.ReadAt off=%d len=%d device=%d: %w",
-			off, len(p), b.length, ErrOutOfBounds)
+			off, len(p), b.length, err)
 	}
-	if err := validate.Alignment(off, len(p)); err != nil {
+	if err := checkAlignment(off, len(p)); err != nil {
 		return 0, fmt.Errorf("blockdev.ReadAt off=%d len=%d: %w",
-			off, len(p), ErrMisaligned)
+			off, len(p), err)
 	}
 	if len(p) == 0 {
 		return 0, nil
@@ -88,7 +85,7 @@ func (b *BlockDevice) readAt(p []byte, off int64) (int, error) {
 	for i := 0; i < len(p); i += BlockSize {
 		blockOff := off + int64(i)
 		blockNum := blockOff / BlockSize
-		if data, ok := b.overlay.Get(blockNum); ok {
+		if data, ok := b.ov.get(blockNum); ok {
 			copy(p[i:i+BlockSize], data)
 		} else {
 			copy(p[i:i+BlockSize], b.base[blockOff:blockOff+BlockSize])
@@ -120,20 +117,20 @@ func (b *BlockDevice) WriteAt(p []byte, off int64) (int, error) {
 }
 
 func (b *BlockDevice) writeAt(p []byte, off int64) (int, error) {
-	if err := validate.Bounds(off, len(p), b.length); err != nil {
+	if err := checkBounds(off, len(p), b.length); err != nil {
 		return 0, fmt.Errorf("blockdev.WriteAt off=%d len=%d device=%d: %w",
-			off, len(p), b.length, ErrOutOfBounds)
+			off, len(p), b.length, err)
 	}
-	if err := validate.Alignment(off, len(p)); err != nil {
+	if err := checkAlignment(off, len(p)); err != nil {
 		return 0, fmt.Errorf("blockdev.WriteAt off=%d len=%d: %w",
-			off, len(p), ErrMisaligned)
+			off, len(p), err)
 	}
 	if len(p) == 0 {
 		return 0, nil
 	}
 	for i := 0; i < len(p); i += BlockSize {
 		blockNum := (off + int64(i)) / BlockSize
-		b.overlay.Put(blockNum, p[i:i+BlockSize])
+		b.ov.put(blockNum, p[i:i+BlockSize])
 	}
 	return len(p), nil
 }
