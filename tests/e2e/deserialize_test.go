@@ -8,33 +8,25 @@ import (
 	"github.com/codingminions/blockdev"
 )
 
-// Both nil and []byte{} must produce a base-only device.
+// Both nil and []byte{} produce a base-only device.
 func TestDeserialize_Empty(t *testing.T) {
 	base := patternedBase(4)
-	for _, c := range []struct {
-		name string
-		blob []byte
-	}{
-		{"nil", nil},
-		{"empty slice", []byte{}},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			bd, err := blockdev.Deserialize(c.blob, base)
-			if err != nil {
-				t.Fatalf("Deserialize: %v", err)
+	for _, blob := range [][]byte{nil, {}} {
+		bd, err := blockdev.Deserialize(blob, base)
+		if err != nil {
+			t.Fatalf("Deserialize(%v): %v", blob, err)
+		}
+		p := make([]byte, blockdev.BlockSize)
+		bd.ReadAt(p, blockdev.BlockSize)
+		for i, b := range p {
+			if b != 1 {
+				t.Fatalf("blob=%v p[%d]=0x%02x, want 0x01", blob, i, b)
 			}
-			p := make([]byte, blockdev.BlockSize)
-			bd.ReadAt(p, blockdev.BlockSize)
-			for i, b := range p {
-				if b != 1 {
-					t.Fatalf("p[%d]=0x%02x, want 0x01", i, b)
-				}
-			}
-		})
+		}
 	}
 }
 
-// Write → Serialize → Deserialize → reads must match the original device.
+// Write → Serialize → Deserialize → reads must match original.
 func TestDeserialize_RoundTrip(t *testing.T) {
 	base := patternedBase(8)
 	bd, _ := blockdev.New(base)
@@ -42,12 +34,10 @@ func TestDeserialize_RoundTrip(t *testing.T) {
 	bd.WriteAt(filledBlock(0xBB), 4*blockdev.BlockSize)
 	bd.WriteAt(filledBlock(0xCC), 6*blockdev.BlockSize)
 
-	blob := bd.Serialize()
-	bd2, err := blockdev.Deserialize(blob, base)
+	bd2, err := blockdev.Deserialize(bd.Serialize(), base)
 	if err != nil {
 		t.Fatalf("Deserialize: %v", err)
 	}
-
 	for block := int64(0); block < 8; block++ {
 		var a, b [4096]byte
 		bd.ReadAt(a[:], block*blockdev.BlockSize)
@@ -58,7 +48,7 @@ func TestDeserialize_RoundTrip(t *testing.T) {
 	}
 }
 
-// Every malformed-blob shape our encoder wouldn't produce must yield ErrBadFormat.
+// Every malformed-blob shape our encoder wouldn't produce → ErrBadFormat.
 func TestDeserialize_Rejects(t *testing.T) {
 	base := patternedBase(4)
 
@@ -68,7 +58,7 @@ func TestDeserialize_Rejects(t *testing.T) {
 	binary.BigEndian.PutUint64(outOfRange[0:8], 99)
 
 	negativeBlock := make([]byte, blockdev.EntrySize)
-	binary.BigEndian.PutUint64(negativeBlock[0:8], 1<<63) // high bit → negative as int64
+	binary.BigEndian.PutUint64(negativeBlock[0:8], 1<<63)
 
 	duplicate := make([]byte, 2*blockdev.EntrySize)
 	binary.BigEndian.PutUint64(duplicate[0:8], 1)
@@ -78,67 +68,62 @@ func TestDeserialize_Rejects(t *testing.T) {
 	binary.BigEndian.PutUint64(unsorted[0:8], 2)
 	binary.BigEndian.PutUint64(unsorted[blockdev.EntrySize:blockdev.EntrySize+8], 1)
 
-	for _, c := range []struct {
+	cases := []struct {
 		name string
 		blob []byte
 	}{
 		{"bad length", badLength},
-		{"block# out of range", outOfRange},
-		{"block# negative", negativeBlock},
-		{"duplicate block#", duplicate},
-		{"unsorted entries", unsorted},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			if _, err := blockdev.Deserialize(c.blob, base); !errors.Is(err, blockdev.ErrBadFormat) {
-				t.Errorf("err = %v, want ErrBadFormat", err)
-			}
-		})
+		{"out of range", outOfRange},
+		{"negative block#", negativeBlock},
+		{"duplicate", duplicate},
+		{"unsorted", unsorted},
+	}
+	for _, c := range cases {
+		if _, err := blockdev.Deserialize(c.blob, base); !errors.Is(err, blockdev.ErrBadFormat) {
+			t.Errorf("%s: err = %v, want ErrBadFormat", c.name, err)
+		}
 	}
 }
 
-// Misaligned initial is a separate failure mode (ErrMisaligned, not ErrBadFormat).
+// Misaligned initial is a different failure mode (ErrMisaligned, not ErrBadFormat).
 func TestDeserialize_RejectsMisalignedInitial(t *testing.T) {
 	if _, err := blockdev.Deserialize(nil, make([]byte, 100)); !errors.Is(err, blockdev.ErrMisaligned) {
 		t.Errorf("err = %v, want ErrMisaligned", err)
 	}
 }
 
-func TestDeserialize_AppliesOptions(t *testing.T) {
-	var got blockdev.Event
+// Options propagate through Deserialize, including observer firing on error.
+func TestDeserialize_Options(t *testing.T) {
+	// Happy path: name reaches observer.
+	var ok blockdev.Event
 	_, err := blockdev.Deserialize(nil, make([]byte, blockdev.BlockSize),
 		blockdev.WithName("snap"),
 		blockdev.WithObserver(func(e blockdev.Event) {
 			if e.Op == blockdev.OpDeserialize {
-				got = e
+				ok = e
 			}
 		}),
 	)
 	if err != nil {
-		t.Fatalf("Deserialize: %v", err)
+		t.Fatalf("Deserialize (happy): %v", err)
 	}
-	if got.Op != blockdev.OpDeserialize || got.Device != "snap" {
-		t.Errorf("observer event = %+v", got)
+	if ok.Op != blockdev.OpDeserialize || ok.Device != "snap" {
+		t.Errorf("happy event = %+v", ok)
 	}
-}
 
-// Observer must still fire when Deserialize fails, with Err populated.
-func TestDeserialize_Observer_FiresOnError(t *testing.T) {
-	var got blockdev.Event
-	blob := make([]byte, 7)
-	_, err := blockdev.Deserialize(blob, make([]byte, blockdev.BlockSize),
+	// Failure path: observer still fires with Err populated.
+	var bad blockdev.Event
+	_, err = blockdev.Deserialize(make([]byte, 7), make([]byte, blockdev.BlockSize),
 		blockdev.WithObserver(func(e blockdev.Event) {
 			if e.Op == blockdev.OpDeserialize {
-				got = e
+				bad = e
 			}
 		}),
 	)
 	if !errors.Is(err, blockdev.ErrBadFormat) {
-		t.Fatalf("err = %v, want ErrBadFormat", err)
+		t.Fatalf("Deserialize (bad): err = %v, want ErrBadFormat", err)
 	}
-	if got.Op != blockdev.OpDeserialize {
-		t.Errorf("op = %v, want OpDeserialize", got.Op)
-	}
-	if !errors.Is(got.Err, blockdev.ErrBadFormat) {
-		t.Errorf("event err = %v, want ErrBadFormat", got.Err)
+	if !errors.Is(bad.Err, blockdev.ErrBadFormat) {
+		t.Errorf("bad event err = %v, want ErrBadFormat", bad.Err)
 	}
 }

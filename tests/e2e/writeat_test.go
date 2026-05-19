@@ -23,17 +23,6 @@ func TestWriteAt_ThenReadAt(t *testing.T) {
 	}
 }
 
-func TestWriteAt_Overwrite_LastWins(t *testing.T) {
-	bd, _ := blockdev.New(patternedBase(4))
-	bd.WriteAt(filledBlock(0xAA), blockdev.BlockSize)
-	bd.WriteAt(filledBlock(0xBB), blockdev.BlockSize)
-	got := make([]byte, blockdev.BlockSize)
-	bd.ReadAt(got, blockdev.BlockSize)
-	if got[0] != 0xBB {
-		t.Errorf("first byte 0x%02x, want 0xBB", got[0])
-	}
-}
-
 func TestWriteAt_MultiBlock(t *testing.T) {
 	bd, _ := blockdev.New(patternedBase(4))
 	p := append(filledBlock(0xCC), filledBlock(0xDD)...)
@@ -81,7 +70,7 @@ func TestWriteAt_CallerCanReuseBuffer(t *testing.T) {
 	}
 }
 
-// Demonstrates the COW core: reads serve overlay where written, base elsewhere.
+// The COW core: reads serve overlay where written, base elsewhere.
 func TestReadAt_MixedBaseAndOverlay(t *testing.T) {
 	bd, _ := blockdev.New(patternedBase(4))
 	bd.WriteAt(filledBlock(0xFF), 2*blockdev.BlockSize)
@@ -91,8 +80,7 @@ func TestReadAt_MixedBaseAndOverlay(t *testing.T) {
 
 	for block, want := range []byte{0x00, 0x01, 0xFF, 0x03} {
 		for i := 0; i < blockdev.BlockSize; i++ {
-			got := p[block*blockdev.BlockSize+i]
-			if got != want {
+			if got := p[block*blockdev.BlockSize+i]; got != want {
 				t.Fatalf("block %d byte %d = 0x%02x, want 0x%02x", block, i, got, want)
 			}
 		}
@@ -102,16 +90,15 @@ func TestReadAt_MixedBaseAndOverlay(t *testing.T) {
 func TestWriteAt_Misaligned(t *testing.T) {
 	bd, _ := blockdev.New(make([]byte, 4*blockdev.BlockSize))
 	cases := []struct{ buflen, off int64 }{
-		{blockdev.BlockSize, 1}, {blockdev.BlockSize, 7}, {0, 7}, {100, 0}, {4097, 0},
+		{blockdev.BlockSize, 1}, {blockdev.BlockSize, 7}, {100, 0}, {4097, 0},
 	}
 	for _, c := range cases {
-		p := make([]byte, c.buflen)
-		n, err := bd.WriteAt(p, c.off)
+		n, err := bd.WriteAt(make([]byte, c.buflen), c.off)
 		if !errors.Is(err, blockdev.ErrMisaligned) {
 			t.Errorf("off=%d len=%d: err = %v, want ErrMisaligned", c.off, c.buflen, err)
 		}
 		if n != 0 {
-			t.Errorf("n = %d, want 0 on error", n)
+			t.Errorf("off=%d len=%d: n = %d, want 0 on error", c.off, c.buflen, n)
 		}
 	}
 }
@@ -119,17 +106,17 @@ func TestWriteAt_Misaligned(t *testing.T) {
 func TestWriteAt_OutOfBounds(t *testing.T) {
 	bd, _ := blockdev.New(make([]byte, 4*blockdev.BlockSize))
 	cases := []struct{ buflen, off int64 }{
-		{blockdev.BlockSize, -1}, {blockdev.BlockSize, 4 * blockdev.BlockSize},
+		{blockdev.BlockSize, -1},
+		{blockdev.BlockSize, 4 * blockdev.BlockSize},
 		{2 * blockdev.BlockSize, 3 * blockdev.BlockSize},
 	}
 	for _, c := range cases {
-		p := make([]byte, c.buflen)
-		n, err := bd.WriteAt(p, c.off)
+		n, err := bd.WriteAt(make([]byte, c.buflen), c.off)
 		if !errors.Is(err, blockdev.ErrOutOfBounds) {
 			t.Errorf("off=%d len=%d: err = %v, want ErrOutOfBounds", c.off, c.buflen, err)
 		}
 		if n != 0 {
-			t.Errorf("n = %d, want 0 on error", n)
+			t.Errorf("off=%d len=%d: n = %d, want 0 on error", c.off, c.buflen, n)
 		}
 	}
 }

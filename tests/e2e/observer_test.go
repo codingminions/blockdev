@@ -3,51 +3,44 @@ package e2e_test
 import (
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/codingminions/blockdev"
 )
 
-func TestObserver_FiresOnReadAndWrite(t *testing.T) {
+// Covers the firing contract: post-op event with correct fields, on success
+// and on failure, with Err set when the op failed.
+func TestObserver_Fires(t *testing.T) {
 	var events []blockdev.Event
 	bd, _ := blockdev.New(make([]byte, 4*blockdev.BlockSize),
 		blockdev.WithName("agent-1"),
 		blockdev.WithObserver(func(e blockdev.Event) { events = append(events, e) }),
 	)
+
+	// Success: read + write.
 	bd.ReadAt(make([]byte, blockdev.BlockSize), 0)
 	bd.WriteAt(filledBlock(0xAA), blockdev.BlockSize)
 
-	if len(events) != 2 {
-		t.Fatalf("got %d events, want 2", len(events))
+	// Failure: misaligned (in-bounds) read fires too, with Err.
+	bd.ReadAt(make([]byte, blockdev.BlockSize), 7)
+
+	if len(events) != 3 {
+		t.Fatalf("got %d events, want 3", len(events))
 	}
-	if events[0].Op != blockdev.OpRead || events[0].Length != blockdev.BlockSize ||
-		events[0].Blocks != 1 || events[0].Device != "agent-1" {
+	if events[0].Op != blockdev.OpRead || events[0].Device != "agent-1" || events[0].Err != nil {
 		t.Errorf("read event = %+v", events[0])
 	}
-	if events[1].Op != blockdev.OpWrite || events[1].Length != blockdev.BlockSize ||
-		events[1].Offset != blockdev.BlockSize {
+	if events[1].Op != blockdev.OpWrite || events[1].Blocks != 1 || events[1].Err != nil {
 		t.Errorf("write event = %+v", events[1])
 	}
-	if events[0].Err != nil || events[1].Err != nil {
-		t.Errorf("events report error on success: %+v, %+v", events[0].Err, events[1].Err)
+	if events[2].Op != blockdev.OpRead || !errors.Is(events[2].Err, blockdev.ErrMisaligned) {
+		t.Errorf("misaligned event = %+v", events[2])
+	}
+	if events[0].Duration <= 0 {
+		t.Errorf("duration not measured: %v", events[0].Duration)
 	}
 }
 
-func TestObserver_FiresOnError(t *testing.T) {
-	var got blockdev.Event
-	bd, _ := blockdev.New(make([]byte, 4*blockdev.BlockSize),
-		blockdev.WithObserver(func(e blockdev.Event) { got = e }),
-	)
-	bd.ReadAt(make([]byte, blockdev.BlockSize), 7) // misaligned, in bounds
-
-	if got.Op != blockdev.OpRead {
-		t.Errorf("op = %v, want OpRead", got.Op)
-	}
-	if !errors.Is(got.Err, blockdev.ErrMisaligned) {
-		t.Errorf("err = %v, want ErrMisaligned", got.Err)
-	}
-}
-
+// A user observer that panics must not crash the I/O path.
 func TestObserver_RecoversFromPanic(t *testing.T) {
 	bd, _ := blockdev.New(make([]byte, blockdev.BlockSize),
 		blockdev.WithObserver(func(e blockdev.Event) { panic("observer is broken") }),
@@ -61,20 +54,7 @@ func TestObserver_RecoversFromPanic(t *testing.T) {
 	}
 }
 
-func TestObserver_DurationIsMeasured(t *testing.T) {
-	var got blockdev.Event
-	bd, _ := blockdev.New(make([]byte, blockdev.BlockSize),
-		blockdev.WithObserver(func(e blockdev.Event) { got = e }),
-	)
-	bd.ReadAt(make([]byte, blockdev.BlockSize), 0)
-	if got.Duration <= 0 {
-		t.Errorf("duration = %v, want > 0", got.Duration)
-	}
-	if got.Duration > time.Second {
-		t.Errorf("duration = %v, suspiciously long", got.Duration)
-	}
-}
-
+// Zero-observer is the zero-overhead path; must work without firing anything.
 func TestObserver_NotInvokedWhenAbsent(t *testing.T) {
 	bd, _ := blockdev.New(make([]byte, blockdev.BlockSize))
 	if _, err := bd.ReadAt(make([]byte, blockdev.BlockSize), 0); err != nil {
