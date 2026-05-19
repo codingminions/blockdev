@@ -176,52 +176,6 @@ flowchart LR
 
 ---
 
-## Major design decisions
-
-One-line rationale here; ADR linked where the full reasoning lives.
-
-| Decision | Choice | Why |
-|---|---|---|
-| Block size | `4096` bytes | OS page + NBD sector convention |
-| Overlay | `map[int64][]byte` + `sync.RWMutex` | O(1) lookup, parallel reads  |
-| Base immutability | Caller contract, not enforced | Sharing one base across many sandboxes |
-| Constructor | Functional options | Add knobs later without breaking callers |
-| Serialization | `[8B BE block#][4096B data]`, sorted | Smallest overhead, deterministic |
-| Errors | Sentinel + `fmt.Errorf` wrap | `errors.Is` works without parsing strings  |
-| Validation order | Bounds → alignment | Range vs shape bugs map to different sentinels |
-| Observer | Sync, post-op, outside locks | Honest latency, panic-safe  |
-| `Deserialize` checks | Strict (length + range + dedup + order) | Catches storage corruption |
-| Empty `Serialize()` | Returns `nil` | Zero-allocation fresh-device path |
-| Dependencies | stdlib only | Clean module |
-
----
-
-## Current state
-
-**Done in v0.1.0**
-
-- `New`, `ReadAt`, `WriteAt`, `Serialize`, `Deserialize` — functionally complete
-- Implements `io.ReaderAt` and `io.WriterAt` (compile-time asserted)
-- Functional options: `WithName`, `WithObserver`
-- 28 black-box tests in `tests/e2e/`, all pass under `-race`
-- 14 benchmarks in `tests/benchmarks/`
-- Wire format locked by golden-bytes test
-- CI: `build` + `vet` + `gofmt` + `test -race` on Go 1.22 + 1.23
-- Nightly benchmark chart on GitHub Pages
-
-**Deliberately out of scope**
-
-- NBD server integration (caller wires this via `io.ReaderAt`/`io.WriterAt`)
-- FUSE filesystem
-- Sharded mutexes
-- Overlay compression / encryption
-- `Codec` interface for pluggable formats
-- Fuzz tests for `Deserialize`
-- Snapshot diff between two serialized blobs
-- Baked-in Prometheus metrics — use `WithObserver`
-
----
-
 ## Benchmarks
 
 Latest local numbers (Apple M1 Pro):
