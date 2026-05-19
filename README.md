@@ -25,7 +25,11 @@ flowchart LR
     BD -.->|"Event{Op,Off,Len,Dur,Err}"| Obs[your observer fn]
 ```
 
-Two layers: a **base** (immutable, often shared across many devices) and an **overlay** (per-instance, only stores changed blocks). Reads consult the overlay first and fall through to the base. Writes go to the overlay; the base is never mutated. `Serialize` emits only the overlay; `Deserialize` reconstructs from blob + the original base. An optional **observer** receives an `Event` after every public op.
+Two layers: 
+- a **base** (immutable, often shared across many devices) and
+- an **overlay** (per-instance, only stores changed blocks). Reads consult the overlay first and fall through to the base. Writes go to the overlay; the base is never mutated.
+    - `Serialize` emits only the overlay; `Deserialize` reconstructs from blob + the original base.
+    - An optional **observer** receives an `Event` after every public op.
 
 ---
 
