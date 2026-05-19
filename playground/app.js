@@ -32,10 +32,23 @@ function initUI() {
   document.getElementById("btn-snapshot").addEventListener("click", onSnapshot);
   document.getElementById("btn-discard").addEventListener("click", onDiscard);
   document.getElementById("btn-restore").addEventListener("click", onRestore);
+  document.getElementById("btn-copy-hex").addEventListener("click", onCopyHex);
 
   document.getElementById("log").innerHTML = "";
+  renderModuleStamp();
   log("ready", { ok: true }, "WASM loaded — click Initialize to create a device");
   render();
+}
+
+function renderModuleStamp() {
+  const el = document.getElementById("module-stamp");
+  if (!el) return;
+  const v = window.blockdev.version();
+  if (v.ok) {
+    el.textContent = `calling ${v.module} ${v.version} — compiled to WebAssembly`;
+  } else {
+    el.textContent = "(module version unavailable)";
+  }
 }
 
 // -- handlers ---------------------------------------------------------------
@@ -144,6 +157,20 @@ function onRestore() {
     document.getElementById("restore-hex").value = "";
   }
   render();
+}
+
+async function onCopyHex() {
+  const hex = document.getElementById("restore-hex").value;
+  if (!hex.trim()) {
+    log("copy", { ok: false, error: "textarea is empty — run Snapshot first" });
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(hex);
+    log("copy", { ok: true }, `${hex.length} hex chars (${hex.length / 2} bytes) copied to clipboard`);
+  } catch (e) {
+    log("copy", { ok: false, error: `clipboard write failed: ${e.message}` });
+  }
 }
 
 // -- rendering --------------------------------------------------------------

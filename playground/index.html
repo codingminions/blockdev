@@ -97,6 +97,26 @@
       color: #a8a098;
       font-size: 0.78rem;
     }
+    .row .hint code {
+      background: #ece5d6;
+      padding: 0 0.3em;
+      border-radius: 2px;
+      font-size: 0.95em;
+      color: #1a1a1a;
+      font-family: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
+    }
+
+    .module-stamp {
+      display: inline-block;
+      font-family: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
+      font-size: 0.72rem;
+      color: #5a5249;
+      background: #ece5d6;
+      border: 1px solid #d0c8b8;
+      padding: 0.2rem 0.55rem;
+      border-radius: 3px;
+      margin-top: 0.55rem;
+    }
 
     #state-grid {
       font-family: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
@@ -241,6 +261,9 @@
       The Go module is compiled to WebAssembly and runs entirely inside this browser tab —
       <b>the device, overlay, and snapshot all live in your tab's memory</b>.
       Reload the page and everything is gone. That's what "in-memory" means.</p>
+    <p style="color: #7a7268; margin: 0.4rem 0 0; font-size: 0.86rem;">
+      Single-threaded here, but the library is concurrency-safe: overlay guarded by <code>sync.RWMutex</code>, verified by <code>go test -race</code>.</p>
+    <div id="module-stamp" class="module-stamp">checking module version…</div>
   </header>
 
   <section>
@@ -249,7 +272,7 @@
       <label>Blocks (4 KB each):</label>
       <input id="blocks" type="number" min="1" max="64" value="16">
       <button id="btn-init">Initialize</button>
-      <span class="hint">Creates a fresh device. Base is seeded with letters <code>a, b, c, …</code> (block N = byte 'a'+N%26).</span>
+      <span class="hint">→ <code>blockdev.New(base)</code> — fresh device; base seeded with letters <code>a, b, c, …</code> (block N = byte 'a'+N%26).</span>
     </div>
   </section>
 
@@ -273,7 +296,7 @@
       <span class="hint">with character</span>
       <input id="write-char" type="text" maxlength="1" value="A">
       <button id="btn-write">Write</button>
-      <span class="hint">→ fills the block with 4096 copies of this byte</span>
+      <span class="hint">→ <code>bd.WriteAt(p, off)</code> — fills the block with 4096 copies of this byte (overlay only; base untouched)</span>
     </div>
     <div class="action-err" id="write-err"></div>
 
@@ -282,29 +305,29 @@
       <span class="hint">block</span>
       <input id="read-block" type="number" min="0" placeholder="#">
       <button id="btn-read">Read</button>
-      <span class="hint">→ logs the first byte and paints it on the read row in red (overlay) or dim (base)</span>
+      <span class="hint">→ <code>bd.ReadAt(p, off)</code> — overlay-first, falls through to base; paints the read row red (overlay) or dim (base)</span>
     </div>
     <div class="action-err" id="read-err"></div>
     <div class="row">
       <button id="btn-snapshot">Snapshot</button>
-      <span class="hint">→ serializes the overlay, fills the hex box below</span>
+      <span class="hint">→ <code>bd.Serialize()</code> — emits only the overlay (changed blocks), hex-fills the textarea below</span>
     </div>
     <div class="row">
       <button id="btn-discard">Discard device</button>
-      <span class="hint">→ drops the device <em>and clears the hex box</em>; base survives in memory</span>
+      <span class="hint">→ drops the <code>*BlockDevice</code> reference (Go GC reclaims the overlay) <em>and clears the hex box</em>; the base byte slice survives in memory</span>
     </div>
     <div class="callout">
       <b>💾 Copy the hex below before clicking Discard</b> if you want to Restore later.
-      Discard clears the textarea — if you didn't save the hex elsewhere, the overlay is unrecoverable.
-      Each changed block is 4096 + 8 = 4104 bytes (= 8208 hex chars), so even one write produces a long hex string.
+      The textarea content <i>is</i> the snapshot blob — just hex-encoded for display, since a textarea can't show raw binary safely. Every two characters = one byte. Each changed block is 4096 + 8 = 4104 bytes = 8208 hex chars, so even one write produces a long string.
     </div>
     <div class="row" style="align-items: flex-start;">
       <label style="padding-top: 0.4rem;">Restore</label>
       <textarea id="restore-hex" placeholder="paste a hex blob here (auto-filled by Snapshot)"></textarea>
     </div>
     <div class="row">
+      <button id="btn-copy-hex">Copy hex</button>
       <button id="btn-restore">Restore from hex</button>
-      <span class="hint">→ rebuilds the device from blob + the existing base</span>
+      <span class="hint">→ Copy writes the textarea to your clipboard · Restore calls <code>blockdev.Deserialize(blob, base)</code> to rebuild the device</span>
     </div>
   </section>
 
