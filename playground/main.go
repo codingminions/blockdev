@@ -22,10 +22,13 @@ package main
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"runtime/debug"
 	"syscall/js"
 
 	"github.com/codingminions/blockdev"
 )
+
+const modulePath = "github.com/codingminions/blockdev"
 
 // Singleton state for the playground tab.
 var (
@@ -43,6 +46,7 @@ func main() {
 		"discard":    js.FuncOf(jsDiscard),
 		"restore":    js.FuncOf(jsRestore),
 		"state":      js.FuncOf(jsState),
+		"version":    js.FuncOf(jsVersion),
 	}))
 	select {} // keep the Go runtime alive while JS calls in
 }
@@ -180,6 +184,23 @@ func jsRestore(this js.Value, args []js.Value) any {
 		overlayState[blockNum] = blob[i+8]
 	}
 	return okResult()
+}
+
+// version() — reports the blockdev module path + version that this wasm was
+// actually linked against. Sourced from debug.ReadBuildInfo so the banner can't
+// drift from the binary; "unknown" if the build info is unavailable (e.g.,
+// `go run` with a local `replace` directive may show "(devel)").
+func jsVersion(this js.Value, args []js.Value) any {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return okResult(map[string]any{"module": modulePath, "version": "unknown"})
+	}
+	for _, d := range info.Deps {
+		if d.Path == modulePath {
+			return okResult(map[string]any{"module": d.Path, "version": d.Version})
+		}
+	}
+	return okResult(map[string]any{"module": modulePath, "version": "unknown"})
 }
 
 // state() — works even when bd is nil (after discard), so the UI can show a
