@@ -205,8 +205,6 @@ One-line rationale here; ADR linked where the full reasoning lives.
 - Functional options: `WithName`, `WithObserver`
 - 28 black-box tests in `tests/e2e/`, all pass under `-race`
 - 14 benchmarks in `tests/benchmarks/`
-- 4 godoc-runnable examples (`example_test.go`)
-- 6 ADRs documenting every non-obvious choice
 - Wire format locked by golden-bytes test
 - CI: `build` + `vet` + `gofmt` + `test -race` on Go 1.22 + 1.23
 - Nightly benchmark chart on GitHub Pages
