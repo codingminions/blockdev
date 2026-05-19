@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>blockdev — playground</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      max-width: 1000px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      color: #1a1a1a;
+      background: #f7f5f1;
+      line-height: 1.5;
+    }
+
+    header {
+      margin-bottom: 1.5rem;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.7rem;
+    }
+    header p {
+      color: #7a7268;
+      margin: 0.25rem 0 0;
+    }
+    header a {
+      color: #1a1a1a;
+    }
+
+    section {
+      background: white;
+      border: 1px solid #e0d8c8;
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1rem;
+    }
+    section h3 {
+      margin: 0 0 0.75rem;
+      font-size: 0.78rem;
+      color: #7a7268;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+    }
+
+    button {
+      background: #1a1a1a;
+      color: white;
+      border: 0;
+      border-radius: 4px;
+      padding: 0.4rem 0.9rem;
+      cursor: pointer;
+      font-size: 0.88rem;
+      font-family: inherit;
+    }
+    button:hover { background: #333; }
+    button:disabled {
+      background: #c0b8a8;
+      cursor: not-allowed;
+    }
+
+    input[type="number"], input[type="text"], textarea {
+      font-family: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
+      border: 1px solid #c0b8a8;
+      border-radius: 4px;
+      padding: 0.35rem 0.5rem;
+      font-size: 0.88rem;
+      background: white;
+    }
+    input[type="number"] { width: 5em; }
+    input[type="text"] { width: 4em; text-align: center; }
+    textarea {
+      width: 100%;
+      height: 5rem;
+      font-size: 0.75rem;
+      resize: vertical;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.55rem;
+    }
+    .row:last-child { margin-bottom: 0; }
+    .row label {
+      color: #555;
+      font-size: 0.88rem;
+    }
+    .row .hint {
+      color: #a8a098;
+      font-size: 0.78rem;
+    }
+
+    #state-grid {
+      font-family: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
+      font-size: 0.85rem;
+      overflow-x: auto;
+    }
+    #state-grid .empty-state {
+      color: #a8a098;
+      font-style: italic;
+    }
+    #state-grid table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+    #state-grid th, #state-grid td {
+      padding: 0.32rem 0.45rem;
+      text-align: center;
+      border-bottom: 1px solid #f0eadf;
+      min-width: 1.7em;
+    }
+    #state-grid th {
+      color: #7a7268;
+      font-weight: normal;
+      font-size: 0.72rem;
+    }
+    #state-grid td.label, #state-grid th.label {
+      text-align: left;
+      color: #7a7268;
+      font-size: 0.72rem;
+      letter-spacing: 0.04em;
+      min-width: 4.5em;
+    }
+    #state-grid td.empty { color: #d0c8b8; }
+    #state-grid td.overlay {
+      background: #d5e8ff;
+      color: #003a8c;
+      font-weight: 600;
+    }
+    /* On the read row, cells served by overlay are highlighted red instead
+       of blue — visually distinguishes "stored in overlay" (blue, overlay row)
+       from "delivered via overlay" (red, read row). */
+    #state-grid tr.row-read td.overlay {
+      background: #ffd9d9;
+      color: #8c0000;
+    }
+    #state-grid td.base { color: #5a5249; }
+    #state-grid td.na { color: #d0c8b8; font-style: italic; }
+    #state-grid td.unread { color: #c8c0b0; font-style: italic; }
+
+    .discarded-banner {
+      background: #fff3d6;
+      border: 1px solid #e8c87a;
+      color: #6e4a00;
+      padding: 0.6rem 0.8rem;
+      border-radius: 4px;
+      margin-bottom: 0.75rem;
+      font-size: 0.85rem;
+      line-height: 1.4;
+    }
+
+    .legend {
+      margin-top: 0.6rem;
+      color: #a8a098;
+      font-size: 0.72rem;
+    }
+
+    .callout {
+      background: #fff8e7;
+      border-left: 3px solid #e8c87a;
+      padding: 0.5rem 0.7rem;
+      margin: 0.6rem 0;
+      font-size: 0.8rem;
+      color: #6e4a00;
+      border-radius: 0 3px 3px 0;
+    }
+
+    .tip {
+      background: #ecf5ff;
+      border-left: 3px solid #4a90e2;
+      padding: 0.6rem 0.85rem;
+      margin: 0 0 0.85rem;
+      font-size: 0.86rem;
+      color: #1a3a5c;
+      line-height: 1.55;
+      border-radius: 0 3px 3px 0;
+    }
+    .tip code {
+      background: rgba(255,255,255,0.7);
+      padding: 0 0.25em;
+      border-radius: 2px;
+      font-size: 0.92em;
+    }
+
+    .action-err {
+      font-size: 0.78rem;
+      color: #c0392b;
+      padding: 0.15rem 0 0.5rem 4.2em; /* align under the input column */
+      min-height: 1.1rem;
+    }
+    .action-err:empty {
+      padding: 0;
+      min-height: 0;
+    }
+
+    #log {
+      font-family: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
+      font-size: 0.78rem;
+      max-height: 280px;
+      overflow-y: auto;
+      background: #1a1a1a;
+      color: #f0eadf;
+      padding: 0.8rem 1rem;
+      border-radius: 4px;
+      margin: 0;
+      line-height: 1.55;
+    }
+    #log .line { margin-bottom: 0.15rem; }
+    #log .cmd { color: #76c787; }
+    #log .ok { color: #76c787; }
+    #log .err { color: #ff8a8a; }
+    #log .extra {
+      color: #a8a098;
+      font-size: 0.72rem;
+      display: block;
+      margin-left: 1.5em;
+    }
+    #log .empty { color: #6a6258; font-style: italic; }
+
+    .footer-note {
+      font-size: 0.8rem;
+      color: #7a7268;
+      margin-top: 1rem;
+    }
+    .footer-note a { color: #1a1a1a; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>blockdev — playground</h1>
+    <p>A click-and-see-it-work demo of the
+      <a href="https://github.com/codingminions/blockdev">copy-on-write block device</a>.
+      The Go module is compiled to WebAssembly and runs entirely inside this browser tab —
+      <b>the device, overlay, and snapshot all live in your tab's memory</b>.
+      Reload the page and everything is gone. That's what "in-memory" means.</p>
+  </header>
+
+  <section>
+    <h3>1. Initialize</h3>
+    <div class="row">
+      <label>Blocks (4 KB each):</label>
+      <input id="blocks" type="number" min="1" max="64" value="16">
+      <button id="btn-init">Initialize</button>
+      <span class="hint">Creates a fresh device. Base is seeded with letters <code>a, b, c, …</code> (block N = byte 'a'+N%26).</span>
+    </div>
+  </section>
+
+  <section>
+    <h3>2. State</h3>
+    <div id="state-grid"><span class="empty-state">Loading WASM…</span></div>
+  </section>
+
+  <section>
+    <h3>3. Actions</h3>
+    <div class="tip">
+      <b>Try this flow:</b> the base starts seeded with letters <code>a, b, c, …</code>
+      Write <code>X</code> to block 2 → Snapshot (copy the hex) → Discard (watch the base row stay,
+      overlay disappear) → paste the hex back → Restore (overlay returns, exactly as it was).
+      That's the snapshot / resume story in five clicks.
+    </div>
+    <div class="row">
+      <label>Write</label>
+      <span class="hint">block</span>
+      <input id="write-block" type="number" min="0" placeholder="#">
+      <span class="hint">with character</span>
+      <input id="write-char" type="text" maxlength="1" value="A">
+      <button id="btn-write">Write</button>
+      <span class="hint">→ fills the block with 4096 copies of this byte</span>
+    </div>
+    <div class="action-err" id="write-err"></div>
+
+    <div class="row">
+      <label>Read</label>
+      <span class="hint">block</span>
+      <input id="read-block" type="number" min="0" placeholder="#">
+      <button id="btn-read">Read</button>
+      <span class="hint">→ logs the first byte and paints it on the read row in red (overlay) or dim (base)</span>
+    </div>
+    <div class="action-err" id="read-err"></div>
+    <div class="row">
+      <button id="btn-snapshot">Snapshot</button>
+      <span class="hint">→ serializes the overlay, fills the hex box below</span>
+    </div>
+    <div class="row">
+      <button id="btn-discard">Discard device</button>
+      <span class="hint">→ drops the device <em>and clears the hex box</em>; base survives in memory</span>
+    </div>
+    <div class="callout">
+      <b>💾 Copy the hex below before clicking Discard</b> if you want to Restore later.
+      Discard clears the textarea — if you didn't save the hex elsewhere, the overlay is unrecoverable.
+      Each changed block is 4096 + 8 = 4104 bytes (= 8208 hex chars), so even one write produces a long hex string.
+    </div>
+    <div class="row" style="align-items: flex-start;">
+      <label style="padding-top: 0.4rem;">Restore</label>
+      <textarea id="restore-hex" placeholder="paste a hex blob here (auto-filled by Snapshot)"></textarea>
+    </div>
+    <div class="row">
+      <button id="btn-restore">Restore from hex</button>
+      <span class="hint">→ rebuilds the device from blob + the existing base</span>
+    </div>
+  </section>
+
+  <section>
+    <h3>4. Log</h3>
+    <pre id="log"><span class="empty">(loading…)</span></pre>
+  </section>
+
+
+  <script src="wasm_exec.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
