@@ -95,8 +95,8 @@ Full runnable demos in [`examples/`](examples/).
 
 | Demo | Command |
 |---|---|
-| Basic write + read | `go run ./examples/basic` |
-| Snapshot + resume | `go run ./examples/snapshot-resume` |
+| Basic write + read | `go run examples/basic.go` |
+| Snapshot + resume | `go run examples/snapshot-resume.go` |
 
 CI runs `build` · `vet` · `gofmt` · `test -race` on every PR (Go 1.22 + 1.23 matrix). Benchmarks run separately on every push to `main` and nightly; chart linked under [Benchmarks](#benchmarks).
 

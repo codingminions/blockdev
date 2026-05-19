@@ -7,6 +7,10 @@
 *.dll
 *.so
 *.dylib
+*.wasm
+
+# Go's WASM runtime glue (copied from $GOROOT/lib/wasm during playground builds)
+playground/wasm_exec.js
 
 # Test binary, built with `go test -c`
 *.test

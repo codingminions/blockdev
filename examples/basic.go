@@ -1,3 +1,9 @@
+//go:build ignore
+
+// basic.go — minimal write/read demo.
+// Run directly:
+//
+//	go run examples/basic.go
 package main
 
 import (
